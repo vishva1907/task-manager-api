@@ -1,11 +1,17 @@
 const express = require("express");
 const mongoose = require("mongoose");
 require("dotenv").config();
-
+const cors = require("cors");
 const Task = require("./models/Task");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+const User = require("./models/User");
+const authMiddleware = require("./middleware/auth");
+const validateTask = require("./middleware/validateTask");
 
 const app = express();
-
+app.use(cors());
 app.use(express.json());
 
 // Logging Middleware
@@ -34,9 +40,121 @@ app.use((req, res, next) => {
 app.get("/", (req, res) => {
     res.send("Task Manager API is Running...");
 });
+// Register Route
+app.post("/register", async (req, res) => {
+    try {
+        const { email, password } = req.body;
 
+        if (!email || !password) {
+            return res.status(400).json({
+                message: "Email and password are required"
+            });
+        }
+
+        const existingUser = await User.findOne({ email });
+
+        if (existingUser) {
+            return res.status(409).json({
+                message: "User already exists"
+            });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const user = await User.create({
+            email,
+            password: hashedPassword
+        });
+
+        res.status(201).json({
+            message: "User registered successfully",
+            user: {
+                id: user._id,
+                email: user.email
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            message: "Registration failed"
+        });
+    }
+});
+// Login Route
+app.post("/login", async (req, res) => {
+    try {
+        const { email, password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({
+                message: "Email and password are required"
+            });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(401).json({
+                message: "Invalid email or password"
+            });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (!isMatch) {
+            return res.status(401).json({
+                message: "Invalid email or password"
+            });
+        }
+
+        const token = jwt.sign(
+            { id: user._id },
+            process.env.JWT_SECRET,
+            { expiresIn: "1h" }
+        );
+
+        res.json({
+            message: "Login successful",
+            token
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            message: "Login failed"
+        });
+    }
+});
+// Get Current User
+app.get("/me", authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select("-password");
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found"
+            });
+        }
+
+        res.status(200).json({
+            id: user._id,
+            email: user.email,
+            createdAt: user.createdAt
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            message: "Failed to fetch user"
+        });
+    }
+});
 // GET - Fetch All Tasks
-app.get("/tasks", async (req, res, next) => {
+app.get("/tasks", authMiddleware, async (req, res) => {
     try {
         const tasks = await Task.find();
 
@@ -47,7 +165,7 @@ app.get("/tasks", async (req, res, next) => {
 });
 
 // GET - Fetch Single Task
-app.get("/tasks/:id", async (req, res, next) => {
+app.get("/tasks/:id", authMiddleware, async (req, res, next)  => {
     try {
         const task = await Task.findById(req.params.id);
 
@@ -64,7 +182,11 @@ app.get("/tasks/:id", async (req, res, next) => {
 });
 
 // POST - Create New Task
-app.post("/tasks", async (req, res, next) => {
+app.post(
+    "/tasks",
+    authMiddleware,
+    validateTask,
+    async (req, res, next) => {
     try {
         const newTask = await Task.create({
             title: req.body.title,
@@ -82,7 +204,7 @@ app.post("/tasks", async (req, res, next) => {
 });
 
 // PUT - Update Task
-app.put("/tasks/:id", async (req, res, next) => {
+app.put("/tasks/:id", authMiddleware, async (req, res) => {
     try {
         const updatedTask = await Task.findByIdAndUpdate(
             req.params.id,
@@ -113,7 +235,7 @@ app.put("/tasks/:id", async (req, res, next) => {
 });
 
 // DELETE - Delete Task
-app.delete("/tasks/:id", async (req, res, next) => {
+app.delete("/tasks/:id", authMiddleware, async (req, res)    => {
     try {
         const deletedTask = await Task.findByIdAndDelete(
             req.params.id
