@@ -6,6 +6,8 @@ const Task = require("./models/Task");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cache = require("./cache");
+const taskEvents = require("./events");
+require("./listeners");
 
 const User = require("./models/User");
 const authMiddleware = require("./middleware/auth");
@@ -236,13 +238,19 @@ app.post(
                 completed: req.body.completed
             });
 
-            // Invalidate all tasks cache
             cache.del("all_tasks");
+
+            console.log(
+                `[API] Response sent at ${new Date().toISOString()}`
+            );
 
             res.status(201).json({
                 message: "Task created successfully",
                 task: newTask
             });
+
+            // Practical 10: task-created event
+            taskEvents.emit("task-created", newTask);
 
         } catch (err) {
             next(err);
@@ -272,7 +280,6 @@ app.put("/tasks/:id", authMiddleware, async (req, res, next) => {
             });
         }
 
-        // Invalidate caches
         cache.del("all_tasks");
         cache.del(`task_${req.params.id}`);
 
@@ -299,14 +306,20 @@ app.delete("/tasks/:id", authMiddleware, async (req, res, next) => {
             });
         }
 
-        // Invalidate caches
         cache.del("all_tasks");
         cache.del(`task_${req.params.id}`);
+
+        console.log(
+            `[API] Delete response sent at ${new Date().toISOString()}`
+        );
 
         res.status(200).json({
             message: "Task deleted successfully",
             task: deletedTask
         });
+
+        // Practical 10: task-deleted event
+        taskEvents.emit("task-deleted", deletedTask);
 
     } catch (err) {
         next(err);
