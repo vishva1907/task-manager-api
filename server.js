@@ -5,12 +5,14 @@ const cors = require("cors");
 const Task = require("./models/Task");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const cache = require("./cache");
 
 const User = require("./models/User");
 const authMiddleware = require("./middleware/auth");
 const validateTask = require("./middleware/validateTask");
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
@@ -40,6 +42,7 @@ app.use((req, res, next) => {
 app.get("/", (req, res) => {
     res.send("Task Manager API is Running...");
 });
+
 // Register Route
 app.post("/register", async (req, res) => {
     try {
@@ -82,6 +85,7 @@ app.post("/register", async (req, res) => {
         });
     }
 });
+
 // Login Route
 app.post("/login", async (req, res) => {
     try {
@@ -128,6 +132,7 @@ app.post("/login", async (req, res) => {
         });
     }
 });
+
 // Get Current User
 app.get("/me", authMiddleware, async (req, res) => {
     try {
@@ -153,20 +158,54 @@ app.get("/me", authMiddleware, async (req, res) => {
         });
     }
 });
-// GET - Fetch All Tasks
-app.get("/tasks", authMiddleware, async (req, res) => {
+
+// GET - Fetch All Tasks with Cache
+app.get("/tasks", authMiddleware, async (req, res, next) => {
     try {
+        const cachedTasks = cache.get("all_tasks");
+
+        if (cachedTasks) {
+            cache.recordHit();
+
+            console.log("Cache HIT: all_tasks");
+
+            return res.status(200).json(cachedTasks);
+        }
+
+        cache.recordMiss();
+
+        console.log("Cache MISS: all_tasks");
+
         const tasks = await Task.find();
 
+        cache.set("all_tasks", tasks);
+
         res.status(200).json(tasks);
+
     } catch (err) {
         next(err);
     }
 });
 
-// GET - Fetch Single Task
-app.get("/tasks/:id", authMiddleware, async (req, res, next)  => {
+// GET - Fetch Single Task with Cache
+app.get("/tasks/:id", authMiddleware, async (req, res, next) => {
     try {
+        const cacheKey = `task_${req.params.id}`;
+
+        const cachedTask = cache.get(cacheKey);
+
+        if (cachedTask) {
+            cache.recordHit();
+
+            console.log(`Cache HIT: ${cacheKey}`);
+
+            return res.status(200).json(cachedTask);
+        }
+
+        cache.recordMiss();
+
+        console.log(`Cache MISS: ${cacheKey}`);
+
         const task = await Task.findById(req.params.id);
 
         if (!task) {
@@ -175,7 +214,10 @@ app.get("/tasks/:id", authMiddleware, async (req, res, next)  => {
             });
         }
 
+        cache.set(cacheKey, task);
+
         res.status(200).json(task);
+
     } catch (err) {
         next(err);
     }
@@ -187,24 +229,29 @@ app.post(
     authMiddleware,
     validateTask,
     async (req, res, next) => {
-    try {
-        const newTask = await Task.create({
-            title: req.body.title,
-            description: req.body.description,
-            completed: req.body.completed
-        });
+        try {
+            const newTask = await Task.create({
+                title: req.body.title,
+                description: req.body.description,
+                completed: req.body.completed
+            });
 
-        res.status(201).json({
-            message: "Task created successfully",
-            task: newTask
-        });
-    } catch (err) {
-        next(err);
+            // Invalidate all tasks cache
+            cache.del("all_tasks");
+
+            res.status(201).json({
+                message: "Task created successfully",
+                task: newTask
+            });
+
+        } catch (err) {
+            next(err);
+        }
     }
-});
+);
 
 // PUT - Update Task
-app.put("/tasks/:id", authMiddleware, async (req, res) => {
+app.put("/tasks/:id", authMiddleware, async (req, res, next) => {
     try {
         const updatedTask = await Task.findByIdAndUpdate(
             req.params.id,
@@ -225,17 +272,22 @@ app.put("/tasks/:id", authMiddleware, async (req, res) => {
             });
         }
 
+        // Invalidate caches
+        cache.del("all_tasks");
+        cache.del(`task_${req.params.id}`);
+
         res.status(200).json({
             message: "Task updated successfully",
             task: updatedTask
         });
+
     } catch (err) {
         next(err);
     }
 });
 
 // DELETE - Delete Task
-app.delete("/tasks/:id", authMiddleware, async (req, res)    => {
+app.delete("/tasks/:id", authMiddleware, async (req, res, next) => {
     try {
         const deletedTask = await Task.findByIdAndDelete(
             req.params.id
@@ -247,13 +299,29 @@ app.delete("/tasks/:id", authMiddleware, async (req, res)    => {
             });
         }
 
+        // Invalidate caches
+        cache.del("all_tasks");
+        cache.del(`task_${req.params.id}`);
+
         res.status(200).json({
             message: "Task deleted successfully",
             task: deletedTask
         });
+
     } catch (err) {
         next(err);
     }
+});
+
+// GET - Cache Statistics
+app.get("/cache-stats", authMiddleware, (req, res) => {
+    const stats = cache.getStats();
+
+    res.status(200).json({
+        message: "Cache statistics",
+        hits: stats.hits,
+        misses: stats.misses
+    });
 });
 
 // Global Error Handler
