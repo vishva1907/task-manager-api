@@ -1,3 +1,4 @@
+
 const express = require("express");
 const mongoose = require("mongoose");
 require("dotenv").config();
@@ -78,7 +79,6 @@ app.post("/register", async (req, res) => {
                 email: user.email
             }
         });
-
     } catch (error) {
         console.error(error);
 
@@ -125,7 +125,6 @@ app.post("/login", async (req, res) => {
             message: "Login successful",
             token
         });
-
     } catch (error) {
         console.error(error);
 
@@ -151,7 +150,6 @@ app.get("/me", authMiddleware, async (req, res) => {
             email: user.email,
             createdAt: user.createdAt
         });
-
     } catch (error) {
         console.error(error);
 
@@ -168,14 +166,11 @@ app.get("/tasks", authMiddleware, async (req, res, next) => {
 
         if (cachedTasks) {
             cache.recordHit();
-
             console.log("Cache HIT: all_tasks");
-
             return res.status(200).json(cachedTasks);
         }
 
         cache.recordMiss();
-
         console.log("Cache MISS: all_tasks");
 
         const tasks = await Task.find();
@@ -183,7 +178,6 @@ app.get("/tasks", authMiddleware, async (req, res, next) => {
         cache.set("all_tasks", tasks);
 
         res.status(200).json(tasks);
-
     } catch (err) {
         next(err);
     }
@@ -193,19 +187,15 @@ app.get("/tasks", authMiddleware, async (req, res, next) => {
 app.get("/tasks/:id", authMiddleware, async (req, res, next) => {
     try {
         const cacheKey = `task_${req.params.id}`;
-
         const cachedTask = cache.get(cacheKey);
 
         if (cachedTask) {
             cache.recordHit();
-
             console.log(`Cache HIT: ${cacheKey}`);
-
             return res.status(200).json(cachedTask);
         }
 
         cache.recordMiss();
-
         console.log(`Cache MISS: ${cacheKey}`);
 
         const task = await Task.findById(req.params.id);
@@ -219,7 +209,6 @@ app.get("/tasks/:id", authMiddleware, async (req, res, next) => {
         cache.set(cacheKey, task);
 
         res.status(200).json(task);
-
     } catch (err) {
         next(err);
     }
@@ -249,9 +238,7 @@ app.post(
                 task: newTask
             });
 
-            // Practical 10: task-created event
             taskEvents.emit("task-created", newTask);
-
         } catch (err) {
             next(err);
         }
@@ -287,7 +274,6 @@ app.put("/tasks/:id", authMiddleware, async (req, res, next) => {
             message: "Task updated successfully",
             task: updatedTask
         });
-
     } catch (err) {
         next(err);
     }
@@ -318,9 +304,7 @@ app.delete("/tasks/:id", authMiddleware, async (req, res, next) => {
             task: deletedTask
         });
 
-        // Practical 10: task-deleted event
         taskEvents.emit("task-deleted", deletedTask);
-
     } catch (err) {
         next(err);
     }
@@ -341,7 +325,6 @@ app.get("/cache-stats", authMiddleware, (req, res) => {
 app.use((err, req, res, next) => {
     console.error(err);
 
-    // Mongoose Validation Error
     if (err.name === "ValidationError") {
         return res.status(400).json({
             error: "Validation failed",
@@ -351,7 +334,6 @@ app.use((err, req, res, next) => {
         });
     }
 
-    // Invalid MongoDB ID
     if (err.name === "CastError") {
         return res.status(400).json({
             error: "Invalid task ID"
@@ -370,18 +352,24 @@ app.use((req, res) => {
     });
 });
 
-// MongoDB Connection
-mongoose
-    .connect(process.env.MONGO_URI)
-    .then(() => {
-        console.log("MongoDB connected");
+// Start MongoDB and HTTP server only when executed directly
+if (require.main === module) {
+    mongoose
+        .connect(process.env.MONGO_URI)
+        .then(() => {
+            console.log("MongoDB connected");
 
-        const PORT = 5000;
+            const PORT = process.env.PORT || 5000;
 
-        app.listen(PORT, () => {
-            console.log(`Server is running on port ${PORT}`);
+            app.listen(PORT, () => {
+                console.log(`Server is running on port ${PORT}`);
+            });
+        })
+        .catch((err) => {
+            console.error("MongoDB connection failed:", err);
+            process.exitCode = 1;
         });
-    })
-    .catch((err) => {
-        console.error("MongoDB connection failed:", err);
-    });
+}
+
+// Export Express app for automated tests
+module.exports = app;
