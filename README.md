@@ -1,3 +1,5 @@
+[![CI Pipeline](https://github.com/vishva1907/task-manager-api/actions/workflows/ci.yml/badge.svg)](https://github.com/vishva1907/task-manager-api/actions/workflows/ci.yml)
+
 # Task Manager API
 
 A RESTful Task Management API built using Node.js, Express.js, MongoDB, Mongoose, JWT authentication, bcrypt password hashing, middleware, and server-side in-memory caching.
